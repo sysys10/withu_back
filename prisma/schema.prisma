@@ -66,7 +66,6 @@ model AuthToken {
   user_id         String        @db.ObjectId
   user            User          @relation(fields: [user_id], references: [id], onDelete: Cascade)
   refresh_token   String        @unique
-  access_token    String?
   device_info     String?
   ip_address      String?
   expires_at      DateTime

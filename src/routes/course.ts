@@ -1,7 +1,49 @@
 import { Router, Request, Response } from "express";
 import { prisma } from "../lib/prisma";
+import { AuthRequest } from "../middleware/auth";
+import { authMiddleware } from "../middleware/auth";
 
 export const courseRouter = Router();
+
+courseRouter.get("/recommend", async (req, res) => {
+  try {
+    const recommendCourses = await prisma.dateCourse.findMany({
+      where: {
+        is_public: true,
+        is_recommend: true,
+      },
+      orderBy: {
+        created_at: "desc",
+      },
+      take: 6,
+      include: {
+        images: {
+          where: { is_main: true },
+          take: 1,
+        },
+      },
+    });
+
+    const transformedCourses = recommendCourses.map((course) => ({
+      id: course.id,
+      name: course.name,
+      description: course.description,
+      tags: course.tags,
+      price: course.price || 0,
+      thumbnail: course.thumbnail || course.images[0]?.image_url || "",
+      rating: course.rating || 0,
+      like_count: course.like_count || 0,
+    }));
+
+    res.json({
+      message: "추천 코스를 불러왔습니다.",
+      courses: transformedCourses.length > 0 ? transformedCourses : [],
+    });
+  } catch (error) {
+    console.error("Error fetching recommended courses:", error);
+    res.status(500).json({ message: "추천 코스를 불러오는데 실패했습니다." });
+  }
+});
 
 courseRouter.get(
   "/detail/:id",
@@ -15,7 +57,6 @@ courseRouter.get(
         return res.status(400).json({ message: "id가 없습니다." });
       }
 
-      // Find the date course with the given ID
       const course = await prisma.dateCourse.findUnique({
         where: {
           id: id,
@@ -48,7 +89,6 @@ courseRouter.get(
         return res.status(404).json({ message: "코스를 찾을 수 없습니다." });
       }
 
-      // Transform the data to match the frontend's expected format
       const transformedCourse = {
         id: course.id,
         name: course.name,
@@ -88,6 +128,51 @@ courseRouter.get(
     }
   }
 );
+
+courseRouter.post(
+  "/create",
+  authMiddleware,
+  async (req: AuthRequest, res: Response): Promise<any> => {
+    try {
+      const userId = req.user?.id;
+      const {
+        name,
+        description,
+        places,
+        tags,
+        price,
+        total_time,
+        total_distance,
+        is_public,
+      } = req.body;
+
+      const createdCourse = await prisma.dateCourse.create({
+        data: {
+          name,
+          description,
+          places,
+          tags,
+          price,
+          total_time,
+          total_distance,
+          is_public,
+          creator: { connect: { id: userId } },
+        },
+      });
+
+      return res.json({
+        message: "코스가 성공적으로 생성되었습니다.",
+        course: createdCourse,
+      });
+    } catch (error) {
+      console.error("Course creation error:", error);
+      return res
+        .status(500)
+        .json({ message: "코스 생성 중 오류가 발생했습니다." });
+    }
+  }
+);
+
 courseRouter.post(
   "/like/:id",
   async (req: Request, res: Response): Promise<any> => {
