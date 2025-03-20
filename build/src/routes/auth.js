@@ -18,38 +18,58 @@ const prisma_1 = require("../lib/prisma");
 const bcrypt_1 = __importDefault(require("bcrypt"));
 exports.authRouter = (0, express_1.Router)();
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
-exports.authRouter.post('/login', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+exports.authRouter.post("/login", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const { email, password } = req.body;
     console.log(email, password);
     const user = yield prisma_1.prisma.user.findUnique({
         where: { email },
     });
     if (!user) {
-        return res.status(401).json({ message: '존재하지 않는 이메일입니다.' });
+        return res.status(401).json({ message: "존재하지 않는 이메일입니다." });
     }
     const isPasswordValid = yield bcrypt_1.default.compare(password, user.hashed_password);
     if (!isPasswordValid) {
-        return res.status(401).json({ message: '비밀번호가 일치하지 않습니다.' });
+        return res.status(401).json({ message: "비밀번호가 일치하지 않습니다." });
     }
-    const refreshToken = jsonwebtoken_1.default.sign({ id: user.id }, process.env.REFRESH_TOKEN_SECRET || '', { expiresIn: '7d' });
-    const accessToken = jsonwebtoken_1.default.sign({ id: user.id }, process.env.ACCESS_TOKEN_SECRET || '', { expiresIn: '15m' });
+    const refreshToken = jsonwebtoken_1.default.sign({ id: user.id }, process.env.REFRESH_TOKEN_SECRET || "", { expiresIn: "7d" });
+    const accessToken = jsonwebtoken_1.default.sign({ id: user.id }, process.env.ACCESS_TOKEN_SECRET || "", { expiresIn: "15m" });
     res.json({ user, accessToken, refreshToken });
 }));
-exports.authRouter.post('/register', (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+exports.authRouter.post("/register", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     const { name, email, password } = req.body;
     console.log(name, email, password);
     const hashedPassword = yield bcrypt_1.default.hash(password, 10);
     if (!name || !email || !password) {
-        return res.status(400).json({ message: '모든 필드를 입력해주세요.' });
+        return res.status(400).json({ message: "모든 필드를 입력해주세요." });
     }
     const existingUser = yield prisma_1.prisma.user.findUnique({
         where: { email },
     });
     if (existingUser) {
-        return res.status(400).json({ message: '이미 존재하는 이메일입니다.' });
+        return res.status(400).json({ message: "이미 존재하는 이메일입니다." });
     }
     const user = yield prisma_1.prisma.user.create({
         data: { name, email, hashed_password: hashedPassword },
     });
     res.json({ user });
+}));
+exports.authRouter.post("/refresh", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
+    var _a;
+    console.log("refreshToken: ", req.headers);
+    const refreshToken = (_a = req.headers.authorization) === null || _a === void 0 ? void 0 : _a.split(" ")[1];
+    if (!refreshToken) {
+        return res
+            .status(402)
+            .json({ message: "토큰이 없습니다. 재로그인 처리해주세요." });
+    }
+    const verified = jsonwebtoken_1.default.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET || "");
+    if (!verified) {
+        //토큰 만료나 이상한 토큰일 경우
+        return res
+            .status(403)
+            .json({ message: "토큰이 만료되었습니다. 재로그인 처리해주세요." });
+    }
+    const accessToken = jsonwebtoken_1.default.sign({ id: verified.id }, process.env.ACCESS_TOKEN_SECRET || "", { expiresIn: "15m" });
+    console.log("newAccessToken: ", accessToken);
+    res.json({ accessToken });
 }));
