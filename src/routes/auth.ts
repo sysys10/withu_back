@@ -107,7 +107,6 @@ authRouter.post(
   async (req: Request, res: Response): Promise<any> => {
     try {
       const { refreshToken } = req.body;
-
       if (!refreshToken) {
         return res.status(400).json({ message: "리프레시 토큰이 필요합니다." });
       }
@@ -122,20 +121,20 @@ authRouter.post(
         tokenRecord.is_revoked ||
         tokenRecord.expires_at < new Date()
       ) {
+        console.log("유효하지 않은 리프레시 토큰입니다.");
         return res
-          .status(401)
+          .status(402)
           .json({ message: "유효하지 않은 리프레시 토큰입니다." });
       }
 
       try {
         jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET || "");
       } catch (error) {
-        // 토큰이 유효하지 않으면 DB에서도 삭제
         await prisma.authToken.update({
           where: { id: tokenRecord.id },
           data: { is_revoked: true },
         });
-        return res.status(401).json({ message: "만료된 리프레시 토큰입니다." });
+        return res.status(402).json({ message: "만료된 리프레시 토큰입니다." });
       }
 
       // 새로운 액세스 토큰 발급

@@ -24,14 +24,14 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.authRouter = void 0;
-// src/routes/auth.ts
 const express_1 = require("express");
 const prisma_1 = require("../lib/prisma");
 const bcrypt_1 = __importDefault(require("bcrypt"));
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const auth_1 = require("../middleware/auth");
+const jwtUtils_1 = require("../utils/jwtUtils");
+const jwtUtils_2 = require("../utils/jwtUtils");
 exports.authRouter = (0, express_1.Router)();
-// 로그인 라우트
 exports.authRouter.post("/login", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { email, password } = req.body;
@@ -45,13 +45,10 @@ exports.authRouter.post("/login", (req, res) => __awaiter(void 0, void 0, void 0
         if (!isPasswordValid) {
             return res.status(401).json({ message: "비밀번호가 일치하지 않습니다." });
         }
-        // 토큰 생성
-        const refreshToken = jsonwebtoken_1.default.sign({ id: user.id }, process.env.REFRESH_TOKEN_SECRET || "", { expiresIn: "7d" });
-        const accessToken = jsonwebtoken_1.default.sign({ id: user.id }, process.env.ACCESS_TOKEN_SECRET || "", { expiresIn: "15m" });
-        // 디바이스 및 IP 정보 가져오기
+        const accessToken = (0, jwtUtils_2.generateAccessToken)(user.id);
+        const refreshToken = (0, jwtUtils_1.generateRefreshToken)(user.id);
         const deviceInfo = req.headers["user-agent"] || "unknown";
         const ipAddress = req.ip || "unknown";
-        // 리프레시 토큰을 DB에 저장
         yield prisma_1.prisma.authToken.create({
             data: {
                 user_id: user.id,
@@ -62,7 +59,6 @@ exports.authRouter.post("/login", (req, res) => __awaiter(void 0, void 0, void 0
                 expires_at: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000), // 7일 후
             },
         });
-        // 민감한 정보 제외하고 응답
         const { hashed_password } = user, userWithoutPassword = __rest(user, ["hashed_password"]);
         return res.json({
             user: userWithoutPassword,
@@ -75,7 +71,6 @@ exports.authRouter.post("/login", (req, res) => __awaiter(void 0, void 0, void 0
         return res.status(500).json({ message: "로그인 중 오류가 발생했습니다." });
     }
 }));
-// 회원가입 라우트
 exports.authRouter.post("/register", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { name, email, password } = req.body;
@@ -96,7 +91,6 @@ exports.authRouter.post("/register", (req, res) => __awaiter(void 0, void 0, voi
                 hashed_password: hashedPassword,
             },
         });
-        // 민감한 정보 제외하고 응답
         const { hashed_password } = user, userWithoutPassword = __rest(user, ["hashed_password"]);
         return res.json({
             message: "회원가입이 완료되었습니다.",
@@ -110,14 +104,12 @@ exports.authRouter.post("/register", (req, res) => __awaiter(void 0, void 0, voi
             .json({ message: "회원가입 중 오류가 발생했습니다." });
     }
 }));
-// 토큰 갱신 라우트
 exports.authRouter.post("/refresh", (req, res) => __awaiter(void 0, void 0, void 0, function* () {
     try {
         const { refreshToken } = req.body;
         if (!refreshToken) {
             return res.status(400).json({ message: "리프레시 토큰이 필요합니다." });
         }
-        // DB에서 리프레시 토큰 확인
         const tokenRecord = yield prisma_1.prisma.authToken.findUnique({
             where: { refresh_token: refreshToken },
             include: { user: true },
@@ -125,29 +117,27 @@ exports.authRouter.post("/refresh", (req, res) => __awaiter(void 0, void 0, void
         if (!tokenRecord ||
             tokenRecord.is_revoked ||
             tokenRecord.expires_at < new Date()) {
+            console.log("유효하지 않은 리프레시 토큰입니다.");
             return res
-                .status(401)
+                .status(402)
                 .json({ message: "유효하지 않은 리프레시 토큰입니다." });
         }
-        // 토큰 검증
         try {
             jsonwebtoken_1.default.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET || "");
         }
         catch (error) {
-            // 토큰이 유효하지 않으면 DB에서도 삭제
             yield prisma_1.prisma.authToken.update({
                 where: { id: tokenRecord.id },
                 data: { is_revoked: true },
             });
-            return res.status(401).json({ message: "만료된 리프레시 토큰입니다." });
+            return res.status(402).json({ message: "만료된 리프레시 토큰입니다." });
         }
         // 새로운 액세스 토큰 발급
         const newAccessToken = jsonwebtoken_1.default.sign({ id: tokenRecord.user_id }, process.env.ACCESS_TOKEN_SECRET || "", { expiresIn: "15m" });
-        // 토큰 레코드 업데이트
-        yield prisma_1.prisma.authToken.update({
-            where: { id: tokenRecord.id },
-            data: { access_token: newAccessToken },
-        });
+        // await prisma.authToken.update({
+        //   where: { id: tokenRecord.id },
+        //   data: { access_token: newAccessToken },
+        // });
         return res.json({
             accessToken: newAccessToken,
         });
@@ -168,7 +158,6 @@ exports.authRouter.post("/logout", auth_1.authMiddleware, (req, res) => __awaite
         if (!refreshToken) {
             return res.status(400).json({ message: "리프레시 토큰이 필요합니다." });
         }
-        // 해당 리프레시 토큰을 무효화
         yield prisma_1.prisma.authToken.updateMany({
             where: {
                 user_id: userId,

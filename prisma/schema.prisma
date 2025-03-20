@@ -183,10 +183,10 @@ model PlacePhoto {
   id              String        @id @default(auto()) @map("_id") @db.ObjectId
   place_id        String        @db.ObjectId
   place           Place         @relation(fields: [place_id], references: [id], onDelete: Cascade)
+  order           Int
   
   image_url       String
   description     String?
-  taken_at        DateTime?
   
   created_at      DateTime      @default(now())
   
